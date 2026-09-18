@@ -1,18 +1,17 @@
 # =============================================================================
-# CodeMender CI/CD Guardrail: STARTER PIPELINE
+# CodeMender CI/CD Guardrail: REFERENCE SOLUTION
 # =============================================================================
-# This pipeline is almost complete. Three things are missing, marked FIXME 1,
-# FIXME 2 and FIXME 3 below.
+# This is the completed version of lab/templates/codemender-pipeline.template.yaml
+# with all three FIXMEs resolved. Everything else is identical, so:
 #
-# It lives under lab/templates/ (outside .github/workflows/) so GitHub Actions
-# never picks it up. Copy it into place, then fix the three gaps:
+#     diff .github/workflows/codemender-pipeline.yml \
+#          lab/solutions/codemender-pipeline.solution.yaml
 #
-#     mkdir -p .github/workflows
-#     cp lab/templates/codemender-pipeline.template.yaml \
-#        .github/workflows/codemender-pipeline.yml
+# should show only the three places you edited (plus this header). Attempt the
+# FIXMEs yourself before reading this.
 #
-# A completed reference lives at lab/solutions/codemender-pipeline.solution.yaml.
-# Try the three FIXMEs yourself first, then diff the two files.
+# It lives under lab/solutions/ (outside .github/workflows/) so GitHub Actions
+# never picks it up.
 # =============================================================================
 
 name: CodeMender CI/CD Guardrail
@@ -29,15 +28,10 @@ on:
 permissions:
   contents: write          # push the remediation branch
   pull-requests: write     # open the autonomous remediation PR
-  #
-  # FIXME 1: One permission is missing, and it is the one that makes keyless
-  #   authentication possible. Without it GitHub refuses to mint the OIDC
-  #   token, and the auth step below fails with:
-  #
-  #       Unable to get ACTIONS_ID_TOKEN_REQUEST_URL
-  #
-  #   Add it here, following the same `scope: access-level` pattern as the two
-  #   lines above. The scope name is the one GitHub uses for OIDC ID tokens.
+  id-token: write          # ANSWER 1: lets GitHub mint the OIDC token that
+                           #   Workload Identity Federation exchanges for a
+                           #   short-lived Google Cloud access token. This is
+                           #   the single line that makes the lab keyless.
 
 # Settings shared by every step below.
 #   SCAN_PATH  one directory. The scan covers everything under it, and keeping
@@ -152,14 +146,12 @@ jobs:
       - name: CodeMender Scan
         id: scan
         run: |
-          # FIXME 2: This command is missing its flags. Replace FLAGS_GO_HERE
-          #   using the flag table in the codelab. You need two things:
-          #     1. run without asking the user to confirm anything
-          #     2. pin the model to $CM_MODEL
+          # ANSWER 2:
+          #   -y        no prompts; a CI runner has no keyboard
+          #   --model   pin the model for predictable results and latency
           #
-          #   Note what you do not need. The agent is already scoped to the
-          #   whole repository by project_paths above, so there is no reason to
-          #   switch the sandbox off here.
+          #   No --unrestricted. project_paths already lets the agent follow
+          #   imports and callers across the repo with the sandbox left on.
           cm find "$SCAN_PATH" -y --model "$CM_MODEL" 2>&1 | tee "$RUNNER_TEMP/cm-find.cm.log"
 
       # Re-emit the findings as JSON for the triage script. This is a separate
@@ -226,18 +218,13 @@ jobs:
             fi
 
             echo "::group::Fix $FID"
-            # FIXME 3: Replace FLAGS_GO_HERE. The cm verify call above is a
-            #   worked example, and this command takes exactly the same flags
-            #   for exactly the same reasons.
-            #
-            #   The rule worth remembering: any cm command that lets the agent
-            #   run commands or write files needs both -y and --bypass-warning.
-            #   That is verify and fix. cm find in FIXME 2 does not, because a
-            #   scan is read-only: FIND mode has those tools switched off, so
-            #   the warning never triggers.
-            #
-            #   Do not add --unrestricted. project_paths already gave the agent
-            #   this whole repository.
+            # ANSWER 3: identical to the cm verify call above.
+            #   -y                 no prompts; a CI runner has no keyboard
+            #   --bypass-warning   acknowledge that the agent may run commands
+            #                      and write files. This is a separate gate
+            #                      from -y and it fires whenever stdin is not a
+            #                      terminal, which in CI is always.
+            #   --model            pin the model for predictable results
             cm fix "$FID" -y --bypass-warning --model "$CM_MODEL" 2>&1 | tee "$RUNNER_TEMP/fix-$FID.cm.log" || true
 
             # Safety net: if cm did not edit the files directly, recover the
